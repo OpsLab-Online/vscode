@@ -12,7 +12,7 @@ import { Action } from 'vs/base/common/actions';
 import * as arrays from 'vs/base/common/arrays';
 import { Color } from 'vs/base/common/color';
 import { Emitter, Event } from 'vs/base/common/event';
-import { IDisposable } from 'vs/base/common/lifecycle';
+import { IDisposable, Disposable } from 'vs/base/common/lifecycle';
 import * as platform from 'vs/base/common/platform';
 import * as strings from 'vs/base/common/strings';
 import { ICodeEditor, IEditorMouseEvent, MouseTargetType } from 'vs/editor/browser/editorBrowser';
@@ -42,7 +42,7 @@ export const COMMENTEDITOR_DECORATION_KEY = 'commenteditordecoration';
 const COLLAPSE_ACTION_CLASS = 'expand-review-action octicon octicon-x';
 const COMMENT_SCHEME = 'comment';
 
-export class CommentNode {
+export class CommentNode extends Disposable {
 	private _domNode: HTMLElement;
 	private _body: HTMLElement;
 	private _md: HTMLElement;
@@ -54,8 +54,13 @@ export class CommentNode {
 
 	constructor(
 		public comment: modes.Comment,
+		private owner: number,
 		private markdownRenderer: MarkdownRenderer,
+		private themeService: IThemeService,
+		private commentService: ICommentService
 	) {
+		super();
+
 		this._domNode = dom.$('div.review-comment');
 		this._domNode.tabIndex = 0;
 		let avatar = dom.append(this._domNode, dom.$('div.avatar-container'));
@@ -63,9 +68,45 @@ export class CommentNode {
 		img.src = comment.gravatar;
 		let commentDetailsContainer = dom.append(this._domNode, dom.$('.review-comment-contents'));
 
-		let header = dom.append(commentDetailsContainer, dom.$('div'));
+		let header = dom.append(commentDetailsContainer, dom.$('div.comment-title'));
 		let author = dom.append(header, dom.$('strong.author'));
 		author.innerText = comment.userName;
+
+		if (comment.canEdit) {
+			const actionsContainer = dom.append(header, dom.$('.comment-actions'));
+			const actionbarWidget = new ActionBar(actionsContainer, {});
+			this._toDispose.push(actionbarWidget);
+
+			const editAction = new Action('comment.edit', nls.localize('label.edit', "Edit"), 'octicon octicon-pencil', true, () => {
+				this._body.classList.add('hidden');
+				const editingArea = dom.append(commentDetailsContainer, dom.$('.edit-container'));
+				const editBox: HTMLTextAreaElement = dom.append(editingArea, dom.$('textarea'));
+				editBox.value = comment.body.value;
+
+				const updateComment = new Button(editingArea);
+
+				updateComment.label = nls.localize('label.updateComment', "Update comment");
+				attachButtonStyler(updateComment, this.themeService);
+
+				updateComment.onDidClick((_) => {
+					editAction.enabled = true;
+					this._body.classList.remove('hidden');
+					editingArea.remove();
+
+					// Do some actual update here
+					this.commentService.editComment(this.owner, this.comment.commentId, editBox.value).then(editedComment => {
+						this.comment = editedComment;
+						// Update body html
+					});
+				});
+
+				editAction.enabled = false;
+				return null;
+			});
+
+			actionbarWidget.push(editAction, { label: false, icon: true });
+		}
+
 		this._body = dom.append(commentDetailsContainer, dom.$('div.comment-body'));
 		this._md = this.markdownRenderer.render(comment.body).element;
 		this._body.appendChild(this._md);
@@ -93,6 +134,10 @@ export class CommentNode {
 				dom.removeClass(this.domNode, 'focus');
 			}, 3000);
 		}
+	}
+
+	dispose() {
+		this._toDispose.forEach(disposeable => disposeable.dispose());
 	}
 }
 
@@ -219,9 +264,9 @@ export class ReviewZoneWidget extends ZoneWidget {
 				this.dispose();
 				return null;
 			}
+
 			this._isCollapsed = true;
 			this.hide();
-
 			return null;
 		});
 
@@ -265,7 +310,10 @@ export class ReviewZoneWidget extends ZoneWidget {
 				lastCommentElement = oldCommentNode[0].domNode;
 				newCommentNodeList.unshift(oldCommentNode[0]);
 			} else {
-				let newElement = new CommentNode(currentComment, this._markdownRenderer);
+				let newElement = new CommentNode(currentComment, this.owner, this._markdownRenderer, this.themeService, this.commentService);
+				// Does this makes sense to put here?
+				this._disposables.push(newElement);
+
 				newCommentNodeList.unshift(newElement);
 				if (lastCommentElement) {
 					this._commentsElement.insertBefore(newElement.domNode, lastCommentElement);
@@ -302,7 +350,8 @@ export class ReviewZoneWidget extends ZoneWidget {
 
 		this._commentElements = [];
 		for (let i = 0; i < this._commentThread.comments.length; i++) {
-			let newCommentNode = new CommentNode(this._commentThread.comments[i], this._markdownRenderer);
+			let newCommentNode = new CommentNode(this._commentThread.comments[i], this.owner, this._markdownRenderer, this.themeService, this.commentService);
+			this._disposables.push(newCommentNode);
 			this._commentElements.push(newCommentNode);
 			this._commentsElement.appendChild(newCommentNode.domNode);
 		}
@@ -592,17 +641,17 @@ export class ReviewZoneWidget extends ZoneWidget {
 		const content: string[] = [];
 		const linkColor = theme.getColor(textLinkForeground);
 		if (linkColor) {
-			content.push(`.monaco-editor .review-widget .body .review-comment a { color: ${linkColor} }`);
+			content.push(`.monaco-editor .review-widget .body .comment-body a { color: ${linkColor} }`);
 		}
 
 		const linkActiveColor = theme.getColor(textLinkActiveForeground);
 		if (linkActiveColor) {
-			content.push(`.monaco-editor .review-widget .body .review-comment a:hover, a:active { color: ${linkActiveColor} }`);
+			content.push(`.monaco-editor .review-widget .body .comment-body a:hover, a:active { color: ${linkActiveColor} }`);
 		}
 
 		const focusColor = theme.getColor(focusBorder);
 		if (focusColor) {
-			content.push(`.monaco-editor .review-widget .body .review-comment a:focus { outline: 1px solid ${focusColor}; }`);
+			content.push(`.monaco-editor .review-widget .body .comment-body a:focus { outline: 1px solid ${focusColor}; }`);
 			content.push(`.monaco-editor .review-widget .body .comment-form .monaco-editor.focused { outline: 1px solid ${focusColor}; }`);
 		}
 

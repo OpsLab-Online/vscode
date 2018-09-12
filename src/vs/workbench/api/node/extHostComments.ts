@@ -93,6 +93,13 @@ export class ExtHostComments implements ExtHostCommentsShape {
 		}).then(commentThread => commentThread ? convertToCommentThread(commentThread, this._commandsConverter) : null);
 	}
 
+	$editComment(handle: number, commentId: string, text: string): Thenable<modes.Comment> {
+		const provider = this._documentProviders.get(handle);
+		return asThenable(() => {
+			return provider.editComment(commentId, text, CancellationToken.None);
+		}).then(comment => convertToComment(comment, this._commandsConverter));
+	}
+
 	$provideDocumentComments(handle: number, uri: UriComponents): Thenable<modes.CommentInfo> {
 		const data = this._documents.getDocumentData(URI.revive(uri));
 		if (!data || !data.document) {
@@ -165,7 +172,8 @@ function convertFromComment(comment: modes.Comment): vscode.Comment {
 		commentId: comment.commentId,
 		body: extHostTypeConverter.MarkdownString.to(comment.body),
 		userName: comment.userName,
-		gravatar: comment.gravatar
+		gravatar: comment.gravatar,
+		canEdit: comment.canEdit
 	};
 }
 
@@ -175,6 +183,7 @@ function convertToComment(vscodeComment: vscode.Comment, commandsConverter: Comm
 		body: extHostTypeConverter.MarkdownString.from(vscodeComment.body),
 		userName: vscodeComment.userName,
 		gravatar: vscodeComment.gravatar,
+		canEdit: vscodeComment.canEdit,
 		command: vscodeComment.command ? commandsConverter.toInternal(vscodeComment.command) : null
 	};
 }
