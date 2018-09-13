@@ -661,7 +661,7 @@ declare module 'vscode' {
 		/**
 		 * Called when a user edits the comment with commentId to the new text text.
 		 */
-		editComment?(commentId: string, text: string, token: CancellationToken): Promise<Comment>;
+		editComment?(document: TextDocument, commentId: string, text: string, token: CancellationToken): Promise<Comment>;
 
 		/**
 		 * Notify of updates to comment threads.

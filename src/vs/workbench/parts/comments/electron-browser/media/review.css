@@ -206,8 +206,8 @@
 	outline-width: 1px;
 }
 
-.monaco-editor .review-widget .body .comment-form .monaco-editor {
-	display: none;
+.monaco-editor .review-widget .body .comment-form .monaco-editor,
+.monaco-editor .review-widget .body .edit-container .monaco-editor {
 	width: 100%;
 	min-height: 90px;
 	max-height: 500px;
@@ -216,16 +216,32 @@
 	padding: 6px 0 6px 12px;
 }
 
+.monaco-editor .review-widget .body .comment-form .monaco-editor,
 .monaco-editor .review-widget .body .comment-form .form-actions {
+	display: none;
+}
+
+.monaco-editor .review-widget .body .comment-form .form-actions,
+.monaco-editor .review-widget .body .edit-container .form-actions {
 	overflow: auto;
 	padding: 10px 0;
-	display: none;
+}
+
+
+.monaco-editor .review-widget .body .edit-container {
+	margin-right: 28px;
+}
+
+.monaco-editor .review-widget .body .edit-textarea {
+	height: 90px;
+	margin-bottom: 10px;
 }
 
 .monaco-editor .review-widget .body .comment-form .monaco-text-button,
 .monaco-editor .review-widget .body .edit-container .monaco-text-button {
 	width: auto;
 	padding: 4px 10px;
+	margin-left: 5px;
 	float: right;
 }
 

@@ -12,7 +12,7 @@ import { Action } from 'vs/base/common/actions';
 import * as arrays from 'vs/base/common/arrays';
 import { Color } from 'vs/base/common/color';
 import { Emitter, Event } from 'vs/base/common/event';
-import { IDisposable, Disposable } from 'vs/base/common/lifecycle';
+import { IDisposable } from 'vs/base/common/lifecycle';
 import * as platform from 'vs/base/common/platform';
 import * as strings from 'vs/base/common/strings';
 import { ICodeEditor, IEditorMouseEvent, MouseTargetType } from 'vs/editor/browser/editorBrowser';
@@ -37,109 +37,11 @@ import { IOpenerService } from 'vs/platform/opener/common/opener';
 import { MarkdownRenderer } from 'vs/editor/contrib/markdown/markdownRenderer';
 import { IMarginData } from 'vs/editor/browser/controller/mouseTarget';
 import { ModelDecorationOptions } from 'vs/editor/common/model/textModel';
+import { CommentNode } from 'vs/workbench/parts/comments/electron-browser/commentNode';
 
 export const COMMENTEDITOR_DECORATION_KEY = 'commenteditordecoration';
 const COLLAPSE_ACTION_CLASS = 'expand-review-action octicon octicon-x';
 const COMMENT_SCHEME = 'comment';
-
-export class CommentNode extends Disposable {
-	private _domNode: HTMLElement;
-	private _body: HTMLElement;
-	private _md: HTMLElement;
-	private _clearTimeout: any;
-
-	public get domNode(): HTMLElement {
-		return this._domNode;
-	}
-
-	constructor(
-		public comment: modes.Comment,
-		private owner: number,
-		private markdownRenderer: MarkdownRenderer,
-		private themeService: IThemeService,
-		private commentService: ICommentService
-	) {
-		super();
-
-		this._domNode = dom.$('div.review-comment');
-		this._domNode.tabIndex = 0;
-		let avatar = dom.append(this._domNode, dom.$('div.avatar-container'));
-		let img = <HTMLImageElement>dom.append(avatar, dom.$('img.avatar'));
-		img.src = comment.gravatar;
-		let commentDetailsContainer = dom.append(this._domNode, dom.$('.review-comment-contents'));
-
-		let header = dom.append(commentDetailsContainer, dom.$('div.comment-title'));
-		let author = dom.append(header, dom.$('strong.author'));
-		author.innerText = comment.userName;
-
-		if (comment.canEdit) {
-			const actionsContainer = dom.append(header, dom.$('.comment-actions'));
-			const actionbarWidget = new ActionBar(actionsContainer, {});
-			this._toDispose.push(actionbarWidget);
-
-			const editAction = new Action('comment.edit', nls.localize('label.edit', "Edit"), 'octicon octicon-pencil', true, () => {
-				this._body.classList.add('hidden');
-				const editingArea = dom.append(commentDetailsContainer, dom.$('.edit-container'));
-				const editBox: HTMLTextAreaElement = dom.append(editingArea, dom.$('textarea'));
-				editBox.value = comment.body.value;
-
-				const updateComment = new Button(editingArea);
-
-				updateComment.label = nls.localize('label.updateComment', "Update comment");
-				attachButtonStyler(updateComment, this.themeService);
-
-				updateComment.onDidClick((_) => {
-					editAction.enabled = true;
-					this._body.classList.remove('hidden');
-					editingArea.remove();
-
-					// Do some actual update here
-					this.commentService.editComment(this.owner, this.comment.commentId, editBox.value).then(editedComment => {
-						this.comment = editedComment;
-						// Update body html
-					});
-				});
-
-				editAction.enabled = false;
-				return null;
-			});
-
-			actionbarWidget.push(editAction, { label: false, icon: true });
-		}
-
-		this._body = dom.append(commentDetailsContainer, dom.$('div.comment-body'));
-		this._md = this.markdownRenderer.render(comment.body).element;
-		this._body.appendChild(this._md);
-
-		this._domNode.setAttribute('aria-label', `${comment.userName}, ${comment.body.value}`);
-		this._domNode.setAttribute('role', 'treeitem');
-		this._clearTimeout = null;
-	}
-
-	update(newComment: modes.Comment) {
-		if (newComment.body !== this.comment.body) {
-			this._body.removeChild(this._md);
-			this._md = this.markdownRenderer.render(newComment.body).element;
-			this._body.appendChild(this._md);
-		}
-
-		this.comment = newComment;
-	}
-
-	focus() {
-		this.domNode.focus();
-		if (!this._clearTimeout) {
-			dom.addClass(this.domNode, 'focus');
-			this._clearTimeout = setTimeout(() => {
-				dom.removeClass(this.domNode, 'focus');
-			}, 3000);
-		}
-	}
-
-	dispose() {
-		this._toDispose.forEach(disposeable => disposeable.dispose());
-	}
-}
 
 let INMEM_MODEL_ID = 0;
 
@@ -310,7 +212,16 @@ export class ReviewZoneWidget extends ZoneWidget {
 				lastCommentElement = oldCommentNode[0].domNode;
 				newCommentNodeList.unshift(oldCommentNode[0]);
 			} else {
-				let newElement = new CommentNode(currentComment, this.owner, this._markdownRenderer, this.themeService, this.commentService);
+				let newElement = new CommentNode(
+					currentComment,
+					this.owner,
+					this.editor.getModel().uri,
+					this._markdownRenderer,
+					this.themeService,
+					this.instantiationService,
+					this.commentService,
+					this.modelService,
+					this.modeService);
 				// Does this makes sense to put here?
 				this._disposables.push(newElement);
 
@@ -350,7 +261,15 @@ export class ReviewZoneWidget extends ZoneWidget {
 
 		this._commentElements = [];
 		for (let i = 0; i < this._commentThread.comments.length; i++) {
-			let newCommentNode = new CommentNode(this._commentThread.comments[i], this.owner, this._markdownRenderer, this.themeService, this.commentService);
+			let newCommentNode = new CommentNode(this._commentThread.comments[i],
+				this.owner,
+				this.editor.getModel().uri,
+				this._markdownRenderer,
+				this.themeService,
+				this.instantiationService,
+				this.commentService,
+				this.modelService,
+				this.modeService);
 			this._disposables.push(newCommentNode);
 			this._commentElements.push(newCommentNode);
 			this._commentsElement.appendChild(newCommentNode.domNode);
@@ -652,7 +571,7 @@ export class ReviewZoneWidget extends ZoneWidget {
 		const focusColor = theme.getColor(focusBorder);
 		if (focusColor) {
 			content.push(`.monaco-editor .review-widget .body .comment-body a:focus { outline: 1px solid ${focusColor}; }`);
-			content.push(`.monaco-editor .review-widget .body .comment-form .monaco-editor.focused { outline: 1px solid ${focusColor}; }`);
+			content.push(`.monaco-editor .review-widget .body .monaco-editor.focused { outline: 1px solid ${focusColor}; }`);
 		}
 
 		const blockQuoteBackground = theme.getColor(textBlockQuoteBackground);
@@ -668,7 +587,7 @@ export class ReviewZoneWidget extends ZoneWidget {
 		const hcBorder = theme.getColor(contrastBorder);
 		if (hcBorder) {
 			content.push(`.monaco-editor .review-widget .body .comment-form .review-thread-reply-button { outline-color: ${hcBorder}; }`);
-			content.push(`.monaco-editor .review-widget .body .comment-form .monaco-editor { outline: 1px solid ${hcBorder}; }`);
+			content.push(`.monaco-editor .review-widget .body .monaco-editor { outline: 1px solid ${hcBorder}; }`);
 		}
 
 		const errorBorder = theme.getColor(inputValidationErrorBorder);

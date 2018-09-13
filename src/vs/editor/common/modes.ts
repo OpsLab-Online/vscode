@@ -1045,7 +1045,7 @@ export interface DocumentCommentProvider {
 	provideDocumentComments(resource: URI, token: CancellationToken): Promise<CommentInfo>;
 	createNewCommentThread(resource: URI, range: Range, text: string, token: CancellationToken): Promise<CommentThread>;
 	replyToCommentThread(resource: URI, range: Range, thread: CommentThread, text: string, token: CancellationToken): Promise<CommentThread>;
-	editComment(commentId: string, text: string, token: CancellationToken): Promise<Comment>;
+	editComment(resource: URI, commentId: string, text: string, token: CancellationToken): Promise<Comment>;
 	onDidChangeCommentThreads(): Event<CommentThreadChangedEvent>;
 }
 

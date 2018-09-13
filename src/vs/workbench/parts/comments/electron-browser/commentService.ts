@@ -41,7 +41,7 @@ export interface ICommentService {
 	updateComments(event: CommentThreadChangedEvent): void;
 	createNewCommentThread(owner: number, resource: URI, range: Range, text: string): Promise<CommentThread>;
 	replyToCommentThread(owner: number, resource: URI, range: Range, thread: CommentThread, text: string): Promise<CommentThread>;
-	editComment(owner: number, commentId: string, text: string): Promise<Comment>;
+	editComment(owner: number, resource: URI, commentId: string, text: string): Promise<Comment>;
 	getComments(resource: URI): Promise<CommentInfo[]>;
 }
 
@@ -115,11 +115,11 @@ export class CommentService extends Disposable implements ICommentService {
 		return null;
 	}
 
-	editComment(owner: number, commentId: string, text: string): Promise<Comment> {
+	editComment(owner: number, resource: URI, commentId: string, text: string): Promise<Comment> {
 		const commentProvider = this._commentProviders.get(owner);
 
 		if (commentProvider) {
-			return commentProvider.editComment(commentId, text, CancellationToken.None);
+			return commentProvider.editComment(resource, commentId, text, CancellationToken.None);
 		}
 
 		return null;

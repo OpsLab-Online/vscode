@@ -78,8 +78,8 @@ export class MainThreadComments extends Disposable implements MainThreadComments
 				replyToCommentThread: async (uri, range, thread, text, token) => {
 					return this._proxy.$replyToCommentThread(handle, uri, range, thread, text);
 				},
-				editComment: async (commentId, text, token) => {
-					return this._proxy.$editComment(handle, commentId, text);
+				editComment: async (uri, commentId, text, token) => {
+					return this._proxy.$editComment(handle, uri, commentId, text);
 				}
 			}
 		);

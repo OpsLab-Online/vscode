@@ -93,10 +93,16 @@ export class ExtHostComments implements ExtHostCommentsShape {
 		}).then(commentThread => commentThread ? convertToCommentThread(commentThread, this._commandsConverter) : null);
 	}
 
-	$editComment(handle: number, commentId: string, text: string): Thenable<modes.Comment> {
+	$editComment(handle: number, uri: UriComponents, commentId: string, text: string): Thenable<modes.Comment> {
+		const data = this._documents.getDocumentData(URI.revive(uri));
+
+		if (!data || !data.document) {
+			throw new Error('Unable to retrieve document from URI');
+		}
+
 		const provider = this._documentProviders.get(handle);
 		return asThenable(() => {
-			return provider.editComment(commentId, text, CancellationToken.None);
+			return provider.editComment(data.document, commentId, text, CancellationToken.None);
 		}).then(comment => convertToComment(comment, this._commandsConverter));
 	}
 
