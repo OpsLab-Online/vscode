@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as assert from 'assert';
 import { EditorInput } from 'vs/workbench/common/editor';
 import { DiffEditorInput } from 'vs/workbench/common/editor/diffEditorInput';
@@ -16,7 +14,7 @@ class MyEditorInput extends EditorInput {
 
 suite('Workbench editor input', () => {
 
-	test('EditorInput', function () {
+	test('EditorInput', () => {
 		let counter = 0;
 		let input = new MyEditorInput();
 		let otherInput = new MyEditorInput();
@@ -24,7 +22,7 @@ suite('Workbench editor input', () => {
 		assert(input.matches(input));
 		assert(!input.matches(otherInput));
 		assert(!input.matches(null));
-		assert(!input.getName());
+		assert(input.getName());
 
 		input.onDispose(() => {
 			assert(true);
@@ -35,7 +33,7 @@ suite('Workbench editor input', () => {
 		assert.equal(counter, 1);
 	});
 
-	test('DiffEditorInput', function () {
+	test('DiffEditorInput', () => {
 		let counter = 0;
 		let input = new MyEditorInput();
 		input.onDispose(() => {

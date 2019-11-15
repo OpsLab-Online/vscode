@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import * as assert from 'assert';
 import { URI } from 'vs/base/common/uri';
 import { Workspace, WorkspaceFolder } from 'vs/platform/workspace/common/workspace';
@@ -31,7 +29,7 @@ suite('Breadcrumb Model', function () {
 
 	test('only uri, inside workspace', function () {
 
-		let model = new EditorBreadcrumbsModel(URI.parse('foo:/bar/baz/ws/some/path/file.ts'), undefined, workspaceService, configService);
+		let model = new EditorBreadcrumbsModel(URI.parse('foo:/bar/baz/ws/some/path/file.ts'), undefined, configService, workspaceService);
 		let elements = model.getElements();
 
 		assert.equal(elements.length, 3);
@@ -46,7 +44,7 @@ suite('Breadcrumb Model', function () {
 
 	test('only uri, outside workspace', function () {
 
-		let model = new EditorBreadcrumbsModel(URI.parse('foo:/outside/file.ts'), undefined, workspaceService, configService);
+		let model = new EditorBreadcrumbsModel(URI.parse('foo:/outside/file.ts'), undefined, configService, workspaceService);
 		let elements = model.getElements();
 
 		assert.equal(elements.length, 2);

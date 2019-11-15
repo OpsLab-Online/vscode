@@ -2,11 +2,10 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as assert from 'assert';
+import { toUint32Array } from 'vs/base/common/uint';
 import { PrefixSumComputer, PrefixSumIndexOfResult } from 'vs/editor/common/viewModel/prefixSumComputer';
-import { toUint32Array } from 'vs/editor/common/core/uint';
 
 suite('Editor ViewModel - PrefixSumComputer', () => {
 

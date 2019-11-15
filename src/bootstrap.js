@@ -20,6 +20,39 @@ process.on('SIGPIPE', () => {
 
 //#endregion
 
+//#region Add support for redirecting the loading of node modules
+
+exports.injectNodeModuleLookupPath = function (injectPath) {
+	if (!injectPath) {
+		throw new Error('Missing injectPath');
+	}
+
+	// @ts-ignore
+	const Module = require('module');
+	const path = require('path');
+
+	const nodeModulesPath = path.join(__dirname, '../node_modules');
+
+	// @ts-ignore
+	const originalResolveLookupPaths = Module._resolveLookupPaths;
+
+	// @ts-ignore
+	Module._resolveLookupPaths = function (moduleName, parent) {
+		const paths = originalResolveLookupPaths(moduleName, parent);
+		if (Array.isArray(paths)) {
+			for (let i = 0, len = paths.length; i < len; i++) {
+				if (paths[i] === nodeModulesPath) {
+					paths.splice(i, 0, injectPath);
+					break;
+				}
+			}
+		}
+
+		return paths;
+	};
+};
+//#endregion
+
 //#region Add support for using node_modules.asar
 /**
  * @param {string=} nodeModulesPath
@@ -37,19 +70,22 @@ exports.enableASARSupport = function (nodeModulesPath) {
 
 	const NODE_MODULES_ASAR_PATH = NODE_MODULES_PATH + '.asar';
 
+	// @ts-ignore
 	const originalResolveLookupPaths = Module._resolveLookupPaths;
-	Module._resolveLookupPaths = function (request, parent, newReturn) {
-		const result = originalResolveLookupPaths(request, parent, newReturn);
 
-		const paths = newReturn ? result : result[1];
-		for (let i = 0, len = paths.length; i < len; i++) {
-			if (paths[i] === NODE_MODULES_PATH) {
-				paths.splice(i, 0, NODE_MODULES_ASAR_PATH);
-				break;
+	// @ts-ignore
+	Module._resolveLookupPaths = function (request, parent) {
+		const paths = originalResolveLookupPaths(request, parent);
+		if (Array.isArray(paths)) {
+			for (let i = 0, len = paths.length; i < len; i++) {
+				if (paths[i] === NODE_MODULES_PATH) {
+					paths.splice(i, 0, NODE_MODULES_ASAR_PATH);
+					break;
+				}
 			}
 		}
 
-		return result;
+		return paths;
 	};
 };
 //#endregion
@@ -67,7 +103,15 @@ exports.uriFromPath = function (_path) {
 		pathName = '/' + pathName;
 	}
 
-	return encodeURI('file://' + pathName).replace(/#/g, '%23');
+	/** @type {string} */
+	let uri;
+	if (process.platform === 'win32' && pathName.startsWith('//')) { // specially handle Windows UNC paths
+		uri = encodeURI('file:' + pathName);
+	} else {
+		uri = encodeURI('file://' + pathName);
+	}
+
+	return uri.replace(/#/g, '%23');
 };
 //#endregion
 
@@ -108,6 +152,16 @@ exports.writeFile = function (file, content) {
 		});
 	});
 };
+
+/**
+ * @param {string} dir
+ * @returns {Promise<string>}
+ */
+exports.mkdirp = function mkdirp(dir) {
+	const fs = require('fs');
+
+	return new Promise((c, e) => fs.mkdir(dir, { recursive: true }, err => (err && err.code !== 'EEXIST') ? e(err) : c(dir)));
+};
 //#endregion
 
 //#region NLS helpers
@@ -131,7 +185,7 @@ exports.setupNLS = function () {
 		const bundles = Object.create(null);
 
 		nlsConfig.loadBundle = function (bundle, language, cb) {
-			let result = bundles[bundle];
+			const result = bundles[bundle];
 			if (result) {
 				cb(undefined, result);
 
@@ -140,7 +194,7 @@ exports.setupNLS = function () {
 
 			const bundleFile = path.join(nlsConfig._resolvedLanguagePackCoreLocation, bundle.replace(/\//g, '!') + '.nls.json');
 			exports.readFile(bundleFile).then(function (content) {
-				let json = JSON.parse(content);
+				const json = JSON.parse(content);
 				bundles[bundle] = json;
 
 				cb(undefined, json);
@@ -198,7 +252,7 @@ exports.configurePortable = function () {
 	}
 
 	const portableDataPath = getPortableDataPath();
-	const isPortable = fs.existsSync(portableDataPath);
+	const isPortable = !('target' in product) && fs.existsSync(portableDataPath);
 	const portableTempPath = path.join(portableDataPath, 'tmp');
 	const isTempPortable = isPortable && fs.existsSync(portableTempPath);
 
@@ -209,12 +263,29 @@ exports.configurePortable = function () {
 	}
 
 	if (isTempPortable) {
-		process.env[process.platform === 'win32' ? 'TEMP' : 'TMPDIR'] = portableTempPath;
+		if (process.platform === 'win32') {
+			process.env['TMP'] = portableTempPath;
+			process.env['TEMP'] = portableTempPath;
+		} else {
+			process.env['TMPDIR'] = portableTempPath;
+		}
 	}
 
 	return {
 		portableDataPath,
 		isPortable
 	};
+};
+//#endregion
+
+//#region ApplicationInsights
+/**
+ * Prevents appinsights from monkey patching modules.
+ * This should be called before importing the applicationinsights module
+ */
+exports.avoidMonkeyPatchFromAppInsights = function () {
+	// @ts-ignore
+	process.env['APPLICATION_INSIGHTS_NO_DIAGNOSTIC_CHANNEL'] = true; // Skip monkey patching of 3rd party modules by appinsights
+	global['diagnosticsSource'] = {}; // Prevents diagnostic channel (which patches "require") from initializing entirely
 };
 //#endregion

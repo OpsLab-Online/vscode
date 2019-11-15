@@ -5,7 +5,6 @@
 
 import * as vscode from 'vscode';
 import * as nls from 'vscode-nls';
-import * as Proto from '../protocol';
 import { ITypeScriptServiceClient } from '../typescriptService';
 import { ConfigurationDependentRegistration } from '../utils/dependentRegistration';
 import * as typeConverters from '../utils/typeConverters';
@@ -45,7 +44,7 @@ class JsDocCompletionProvider implements vscode.CompletionItemProvider {
 		position: vscode.Position,
 		token: vscode.CancellationToken
 	): Promise<vscode.CompletionItem[] | undefined> {
-		const file = this.client.toPath(document.uri);
+		const file = this.client.toOpenedFilePath(document);
 		if (!file) {
 			return undefined;
 		}
@@ -55,14 +54,8 @@ class JsDocCompletionProvider implements vscode.CompletionItemProvider {
 		}
 
 		const args = typeConverters.Position.toFileLocationRequestArgs(file, position);
-		let res: Proto.DocCommandTemplateResponse | undefined;
-		try {
-			res = await this.client.execute('docCommentTemplate', args, token);
-		} catch {
-			return undefined;
-		}
-
-		if (!res.body) {
+		const response = await this.client.execute('docCommentTemplate', args, token);
+		if (response.type !== 'response' || !response.body) {
 			return undefined;
 		}
 
@@ -71,10 +64,10 @@ class JsDocCompletionProvider implements vscode.CompletionItemProvider {
 		// Workaround for #43619
 		// docCommentTemplate previously returned undefined for empty jsdoc templates.
 		// TS 2.7 now returns a single line doc comment, which breaks indentation.
-		if (res.body.newText === '/** */') {
+		if (response.body.newText === '/** */') {
 			item.insertText = defaultJsDoc;
 		} else {
-			item.insertText = templateToSnippet(res.body.newText);
+			item.insertText = templateToSnippet(response.body.newText);
 		}
 
 		return [item];
@@ -88,13 +81,13 @@ class JsDocCompletionProvider implements vscode.CompletionItemProvider {
 		// or could be the opening of a comment
 		const line = document.lineAt(position.line).text;
 		const prefix = line.slice(0, position.character);
-		if (prefix.match(/^\s*$|\/\*\*\s*$|^\s*\/\*\*+\s*$/) === null) {
+		if (!/^\s*$|\/\*\*\s*$|^\s*\/\*\*+\s*$/.test(prefix)) {
 			return false;
 		}
 
 		// And everything after is possibly a closing comment or more whitespace
 		const suffix = line.slice(position.character);
-		return suffix.match(/^\s*\*+\//) !== null;
+		return /^\s*(\*+\/)?\s*$/.test(suffix);
 	}
 }
 
@@ -119,9 +112,10 @@ export function templateToSnippet(template: string): vscode.SnippetString {
 
 export function register(
 	selector: vscode.DocumentSelector,
+	modeId: string,
 	client: ITypeScriptServiceClient,
 ): vscode.Disposable {
-	return new ConfigurationDependentRegistration('jsDocCompletion', 'enabled', () => {
+	return new ConfigurationDependentRegistration(modeId, 'suggest.completeJSDocs', () => {
 		return vscode.languages.registerCompletionItemProvider(selector,
 			new JsDocCompletionProvider(client),
 			'*');

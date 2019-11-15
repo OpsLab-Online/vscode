@@ -2,11 +2,10 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import * as path from 'path';
 import * as fs from 'fs';
-import URI from 'vscode-uri';
+import { URI } from 'vscode-uri';
 
 import { TextDocument, CompletionList, CompletionItemKind, CompletionItem, TextEdit, Range, Position } from 'vscode-languageserver-types';
 import { WorkspaceFolder } from 'vscode-languageserver';
@@ -69,10 +68,15 @@ function providePathSuggestions(pathValue: string, position: Position, range: Ra
 	const workspaceRoot = resolveWorkspaceRoot(document, workspaceFolders);
 	const currentDocFsPath = URI.parse(document.uri).fsPath;
 
-	const paths = providePaths(valueBeforeCursor, currentDocFsPath, workspaceRoot).filter(p => {
-		// Exclude current doc's path
-		return path.resolve(currentDocFsPath, '../', p) !== currentDocFsPath;
-	});
+	const paths = providePaths(valueBeforeCursor, currentDocFsPath, workspaceRoot)
+		.filter(p => {
+			// Exclude current doc's path
+			return path.resolve(currentDocFsPath, '../', p) !== currentDocFsPath;
+		})
+		.filter(p => {
+			// Exclude paths that start with `.`
+			return p[0] !== '.';
+		});
 
 	const fullValueRange = isValueQuoted ? shiftRange(range, 1, -1) : range;
 	const replaceRange = pathToReplaceRange(valueBeforeCursor, fullValue, fullValueRange);
@@ -150,10 +154,10 @@ function pathToReplaceRange(valueBeforeCursor: string, fullValue: string, fullVa
 		const valueAfterLastSlash = fullValue.slice(lastIndexOfSlash + 1);
 		const startPos = shiftPosition(fullValueRange.end, -valueAfterLastSlash.length);
 		// If whitespace exists, replace until it
-		const whiteSpaceIndex = valueAfterLastSlash.indexOf(' ');
+		const whitespaceIndex = valueAfterLastSlash.indexOf(' ');
 		let endPos;
-		if (whiteSpaceIndex !== -1) {
-			endPos = shiftPosition(startPos, whiteSpaceIndex);
+		if (whitespaceIndex !== -1) {
+			endPos = shiftPosition(startPos, whitespaceIndex);
 		} else {
 			endPos = fullValueRange.end;
 		}
@@ -191,11 +195,12 @@ function escapePath(p: string) {
 }
 
 function resolveWorkspaceRoot(activeDoc: TextDocument, workspaceFolders: WorkspaceFolder[]): string | undefined {
-	for (let i = 0; i < workspaceFolders.length; i++) {
-		if (startsWith(activeDoc.uri, workspaceFolders[i].uri)) {
-			return path.resolve(URI.parse(workspaceFolders[i].uri).fsPath);
+	for (const folder of workspaceFolders) {
+		if (startsWith(activeDoc.uri, folder.uri)) {
+			return path.resolve(URI.parse(folder.uri).fsPath);
 		}
 	}
+	return undefined;
 }
 
 function shiftPosition(pos: Position, offset: number): Position {

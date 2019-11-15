@@ -2,15 +2,13 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
-
 import 'mocha';
 import * as path from 'path';
 import * as fs from 'fs';
 
 import * as assert from 'assert';
 import { getLanguageModes } from '../modes/languageModes';
-import { TextDocument, Range, FormattingOptions } from 'vscode-languageserver-types';
+import { TextDocument, Range, FormattingOptions, ClientCapabilities } from 'vscode-html-languageservice';
 
 import { format } from '../modes/formatting';
 
@@ -21,7 +19,7 @@ suite('HTML Embedded Formatting', () => {
 			settings: options,
 			folders: [{ name: 'foo', uri: 'test://foo' }]
 		};
-		var languageModes = getLanguageModes({ css: true, javascript: true }, workspace);
+		var languageModes = getLanguageModes({ css: true, javascript: true }, workspace, ClientCapabilities.LATEST);
 
 		let rangeStartOffset = value.indexOf('|');
 		let rangeEndOffset;
@@ -40,15 +38,15 @@ suite('HTML Embedded Formatting', () => {
 			formatOptions = FormattingOptions.create(2, true);
 		}
 
-		let result = format(languageModes, document, range, formatOptions, void 0, { css: true, javascript: true });
+		let result = format(languageModes, document, range, formatOptions, undefined, { css: true, javascript: true });
 
 		let actual = TextDocument.applyEdits(document, result);
 		assert.equal(actual, expected, message);
 	}
 
 	function assertFormatWithFixture(fixtureName: string, expectedPath: string, options?: any, formatOptions?: FormattingOptions): void {
-		let input = fs.readFileSync(path.join(__dirname, 'fixtures', 'inputs', fixtureName)).toString().replace(/\r\n/mg, '\n');
-		let expected = fs.readFileSync(path.join(__dirname, 'fixtures', 'expected', expectedPath)).toString().replace(/\r\n/mg, '\n');
+		let input = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', 'inputs', fixtureName)).toString().replace(/\r\n/mg, '\n');
+		let expected = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'test', 'fixtures', 'expected', expectedPath)).toString().replace(/\r\n/mg, '\n');
 		assertFormat(input, expected, options, formatOptions, expectedPath);
 	}
 
@@ -69,8 +67,8 @@ suite('HTML Embedded Formatting', () => {
 
 	test('HTLM & Scripts - Fixtures', function () {
 		assertFormatWithFixture('19813.html', '19813.html');
-		assertFormatWithFixture('19813.html', '19813-4spaces.html', void 0, FormattingOptions.create(4, true));
-		assertFormatWithFixture('19813.html', '19813-tab.html', void 0, FormattingOptions.create(1, false));
+		assertFormatWithFixture('19813.html', '19813-4spaces.html', undefined, FormattingOptions.create(4, true));
+		assertFormatWithFixture('19813.html', '19813-tab.html', undefined, FormattingOptions.create(1, false));
 		assertFormatWithFixture('21634.html', '21634.html');
 	});
 
@@ -161,4 +159,52 @@ suite('HTML Embedded Formatting', () => {
 			].join('\n')
 		);
 	});
-});
+	test('#58435', () => {
+		let options = {
+			html: {
+				format: {
+					contentUnformatted: 'textarea'
+				}
+			}
+		};
+
+		var content = [
+			'<html>',
+			'',
+			'<body>',
+			'  <textarea name= "" id ="" cols="30" rows="10">',
+			'  </textarea>',
+			'</body>',
+			'',
+			'</html>',
+		].join('\n');
+
+		var expected = [
+			'<html>',
+			'',
+			'<body>',
+			'  <textarea name="" id="" cols="30" rows="10">',
+			'  </textarea>',
+			'</body>',
+			'',
+			'</html>',
+		].join('\n');
+
+		assertFormat(content, expected, options);
+	});
+
+}); /*
+content_unformatted: Array(4)["pre", "code", "textarea", …]
+end_with_newline: false
+eol: "\n"
+extra_liners: Array(3)["head", "body", "/html"]
+indent_char: "\t"
+indent_handlebars: false
+indent_inner_html: false
+indent_size: 1
+max_preserve_newlines: 32786
+preserve_newlines: true
+unformatted: Array(1)["wbr"]
+wrap_attributes: "auto"
+wrap_attributes_indent_size: undefined
+wrap_line_length: 120*/

@@ -2,23 +2,21 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
-import { Range } from 'vs/editor/common/core/range';
-import { Position } from 'vs/editor/common/core/position';
 import * as strings from 'vs/base/common/strings';
+import { Position } from 'vs/editor/common/core/position';
+import { Range } from 'vs/editor/common/core/range';
+import { ApplyEditsResult, EndOfLinePreference, FindMatch, IIdentifiedSingleEditOperation, IInternalModelContentChange, ISingleEditOperationIdentifier, ITextBuffer, ITextSnapshot } from 'vs/editor/common/model';
 import { PieceTreeBase, StringBuffer } from 'vs/editor/common/model/pieceTreeTextBuffer/pieceTreeBase';
-import { IIdentifiedSingleEditOperation, EndOfLinePreference, ITextBuffer, ApplyEditsResult, IInternalModelContentChange, FindMatch, ISingleEditOperationIdentifier } from 'vs/editor/common/model';
-import { ITextSnapshot } from 'vs/platform/files/common/files';
 import { SearchData } from 'vs/editor/common/model/textModelSearch';
 
 export interface IValidatedEditOperation {
 	sortIndex: number;
-	identifier: ISingleEditOperationIdentifier;
+	identifier: ISingleEditOperationIdentifier | null;
 	range: Range;
 	rangeOffset: number;
 	rangeLength: number;
-	lines: string[];
+	lines: string[] | null;
 	forceMoveMarkers: boolean;
 	isAutoWhitespaceEdit: boolean;
 }
@@ -28,8 +26,8 @@ export interface IReverseSingleEditOperation extends IIdentifiedSingleEditOperat
 }
 
 export class PieceTreeTextBuffer implements ITextBuffer {
-	private _pieceTree: PieceTreeBase;
-	private _BOM: string;
+	private readonly _pieceTree: PieceTreeBase;
+	private readonly _BOM: string;
 	private _mightContainRTL: boolean;
 	private _mightContainNonBasicASCII: boolean;
 
@@ -106,6 +104,37 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 		let startOffset = this.getOffsetAt(range.startLineNumber, range.startColumn);
 		let endOffset = this.getOffsetAt(range.endLineNumber, range.endColumn);
 		return endOffset - startOffset;
+	}
+
+	public getCharacterCountInRange(range: Range, eol: EndOfLinePreference = EndOfLinePreference.TextDefined): number {
+		if (this._mightContainNonBasicASCII) {
+			// we must count by iterating
+
+			let result = 0;
+
+			const fromLineNumber = range.startLineNumber;
+			const toLineNumber = range.endLineNumber;
+			for (let lineNumber = fromLineNumber; lineNumber <= toLineNumber; lineNumber++) {
+				const lineContent = this.getLineContent(lineNumber);
+				const fromOffset = (lineNumber === fromLineNumber ? range.startColumn - 1 : 0);
+				const toOffset = (lineNumber === toLineNumber ? range.endColumn - 1 : lineContent.length);
+
+				for (let offset = fromOffset; offset < toOffset; offset++) {
+					if (strings.isHighSurrogate(lineContent.charCodeAt(offset))) {
+						result = result + 1;
+						offset = offset + 1;
+					} else {
+						result = result + 1;
+					}
+				}
+			}
+
+			result += this._getEndOfLine(eol).length * (toLineNumber - fromLineNumber);
+
+			return result;
+		}
+
+		return this.getValueLengthInRange(range, eol);
 	}
 
 	public getLength(): number {
@@ -193,12 +222,12 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 			}
 			operations[i] = {
 				sortIndex: i,
-				identifier: op.identifier,
+				identifier: op.identifier || null,
 				range: validatedRange,
 				rangeOffset: this.getOffsetAt(validatedRange.startLineNumber, validatedRange.startColumn),
 				rangeLength: this.getValueLengthInRange(validatedRange),
 				lines: op.text ? op.text.split(/\r\n|\r|\n/) : null,
-				forceMoveMarkers: op.forceMoveMarkers,
+				forceMoveMarkers: Boolean(op.forceMoveMarkers),
 				isAutoWhitespaceEdit: op.isAutoWhitespaceEdit || false
 			};
 		}
@@ -271,7 +300,7 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 
 		const contentChanges = this._doApplyEdits(operations);
 
-		let trimAutoWhitespaceLineNumbers: number[] = null;
+		let trimAutoWhitespaceLineNumbers: number[] | null = null;
 		if (recordTrimAutoWhitespace && newTrimAutoWhitespaceCandidates.length > 0) {
 			// sort line numbers auto whitespace removal candidates for next edit descending
 			newTrimAutoWhitespaceCandidates.sort((a, b) => b.lineNumber - a.lineNumber);
@@ -313,7 +342,7 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 		}
 
 		// At one point, due to how events are emitted and how each operation is handled,
-		// some operations can trigger a high ammount of temporary string allocations,
+		// some operations can trigger a high amount of temporary string allocations,
 		// that will immediately get edited again.
 		// e.g. a formatter inserting ridiculous ammounts of \n on a model with a single line
 		// Therefore, the strategy is to collapse all the operations into a huge single edit operation
@@ -416,7 +445,7 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 			if (editingLinesCnt < insertingLinesCnt) {
 				let newLinesContent: string[] = [];
 				for (let j = editingLinesCnt + 1; j <= insertingLinesCnt; j++) {
-					newLinesContent.push(op.lines[j]);
+					newLinesContent.push(op.lines![j]);
 				}
 
 				newLinesContent[newLinesContent.length - 1] = this.getLineContent(startLineNumber + insertingLinesCnt - 1);
@@ -451,9 +480,9 @@ export class PieceTreeTextBuffer implements ITextBuffer {
 	public static _getInverseEditRanges(operations: IValidatedEditOperation[]): Range[] {
 		let result: Range[] = [];
 
-		let prevOpEndLineNumber: number;
-		let prevOpEndColumn: number;
-		let prevOp: IValidatedEditOperation = null;
+		let prevOpEndLineNumber: number = 0;
+		let prevOpEndColumn: number = 0;
+		let prevOp: IValidatedEditOperation | null = null;
 		for (let i = 0, len = operations.length; i < len; i++) {
 			let op = operations[i];
 

@@ -3,8 +3,6 @@
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
 
-'use strict';
-
 import { workspace, WorkspaceFoldersChangeEvent, Uri, window, Event, EventEmitter, QuickPickItem, Disposable, SourceControl, SourceControlResourceGroup, TextEditor, Memento, OutputChannel } from 'vscode';
 import { Repository, RepositoryState } from './repository';
 import { memoize, sequentialize, debounce } from './decorators';
@@ -14,7 +12,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as nls from 'vscode-nls';
 import { fromGitUri } from './uri';
-import { GitErrorCodes } from './api/git';
+import { GitErrorCodes, APIState as State } from './api/git';
 
 const localize = nls.loadMessageBundle();
 
@@ -65,26 +63,41 @@ export class Model {
 
 	private possibleGitRepositoryPaths = new Set<string>();
 
+	private _onDidChangeState = new EventEmitter<State>();
+	readonly onDidChangeState = this._onDidChangeState.event;
+
+	private _state: State = 'uninitialized';
+	get state(): State { return this._state; }
+
+	setState(state: State): void {
+		this._state = state;
+		this._onDidChangeState.fire(state);
+	}
+
 	private disposables: Disposable[] = [];
 
 	constructor(readonly git: Git, private globalState: Memento, private outputChannel: OutputChannel) {
 		workspace.onDidChangeWorkspaceFolders(this.onDidChangeWorkspaceFolders, this, this.disposables);
-		this.onDidChangeWorkspaceFolders({ added: workspace.workspaceFolders || [], removed: [] });
-
 		window.onDidChangeVisibleTextEditors(this.onDidChangeVisibleTextEditors, this, this.disposables);
-		this.onDidChangeVisibleTextEditors(window.visibleTextEditors);
-
 		workspace.onDidChangeConfiguration(this.onDidChangeConfiguration, this, this.disposables);
 
 		const fsWatcher = workspace.createFileSystemWatcher('**');
 		this.disposables.push(fsWatcher);
 
 		const onWorkspaceChange = anyEvent(fsWatcher.onDidChange, fsWatcher.onDidCreate, fsWatcher.onDidDelete);
-		const onGitRepositoryChange = filterEvent(onWorkspaceChange, uri => /\/\.git\//.test(uri.path));
+		const onGitRepositoryChange = filterEvent(onWorkspaceChange, uri => /\/\.git/.test(uri.path));
 		const onPossibleGitRepositoryChange = filterEvent(onGitRepositoryChange, uri => !this.getRepository(uri));
 		onPossibleGitRepositoryChange(this.onPossibleGitRepositoryChange, this, this.disposables);
 
-		this.scanWorkspaceFolders();
+		this.doInitialScan().finally(() => this.setState('initialized'));
+	}
+
+	private async doInitialScan(): Promise<void> {
+		await Promise.all([
+			this.onDidChangeWorkspaceFolders({ added: workspace.workspaceFolders || [], removed: [] }),
+			this.onDidChangeVisibleTextEditors(window.visibleTextEditors),
+			this.scanWorkspaceFolders()
+		]);
 	}
 
 	/**
@@ -108,6 +121,18 @@ export class Model {
 				children
 					.filter(child => child !== '.git')
 					.forEach(child => this.openRepository(path.join(root, child)));
+
+				const folderConfig = workspace.getConfiguration('git', folder.uri);
+				const paths = folderConfig.get<string[]>('scanRepositories') || [];
+
+				for (const possibleRepositoryPath of paths) {
+					if (path.isAbsolute(possibleRepositoryPath)) {
+						console.warn(localize('not supported', "Absolute paths not supported in 'git.scanRepositories' setting."));
+						continue;
+					}
+
+					this.openRepository(path.join(root, possibleRepositoryPath));
+				}
 			} catch (err) {
 				// noop
 			}
@@ -147,8 +172,8 @@ export class Model {
 			.filter(r => !activeRepositories.has(r!.repository))
 			.filter(r => !(workspace.workspaceFolders || []).some(f => isDescendant(f.uri.fsPath, r!.repository.root))) as OpenRepository[];
 
-		possibleRepositoryFolders.forEach(p => this.openRepository(p.uri.fsPath));
 		openRepositoriesToDispose.forEach(r => r.dispose());
+		await Promise.all(possibleRepositoryFolders.map(p => this.openRepository(p.uri.fsPath)));
 	}
 
 	private onDidChangeConfiguration(): void {
@@ -165,7 +190,7 @@ export class Model {
 		openRepositoriesToDispose.forEach(r => r.dispose());
 	}
 
-	private onDidChangeVisibleTextEditors(editors: TextEditor[]): void {
+	private async onDidChangeVisibleTextEditors(editors: readonly TextEditor[]): Promise<void> {
 		const config = workspace.getConfiguration('git');
 		const autoRepositoryDetection = config.get<boolean | 'subFolders' | 'openEditors'>('autoRepositoryDetection');
 
@@ -173,7 +198,7 @@ export class Model {
 			return;
 		}
 
-		editors.forEach(editor => {
+		await Promise.all(editors.map(async editor => {
 			const uri = editor.document.uri;
 
 			if (uri.scheme !== 'file') {
@@ -186,8 +211,8 @@ export class Model {
 				return;
 			}
 
-			this.openRepository(path.dirname(uri.fsPath));
-		});
+			await this.openRepository(path.dirname(uri.fsPath));
+		}));
 	}
 
 	@sequentialize
@@ -222,9 +247,11 @@ export class Model {
 				return;
 			}
 
-			const repository = new Repository(this.git.open(repositoryRoot), this.globalState);
+			const dotGit = await this.git.getRepositoryDotGit(repositoryRoot);
+			const repository = new Repository(this.git.open(repositoryRoot, dotGit), this.globalState, this.outputChannel);
 
 			this.open(repository);
+			await repository.status();
 		} catch (err) {
 			if (err.gitErrorCode === GitErrorCodes.NotAGitRepository) {
 				return;

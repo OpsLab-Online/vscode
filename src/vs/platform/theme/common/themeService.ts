@@ -2,7 +2,6 @@
  *  Copyright (c) Microsoft Corporation. All rights reserved.
  *  Licensed under the MIT License. See License.txt in the project root for license information.
  *--------------------------------------------------------------------------------------------*/
-'use strict';
 
 import { createDecorator } from 'vs/platform/instantiation/common/instantiation';
 import { Color } from 'vs/base/common/color';
@@ -11,6 +10,7 @@ import * as platform from 'vs/platform/registry/common/platform';
 import { ColorIdentifier } from 'vs/platform/theme/common/colorRegistry';
 import { Event, Emitter } from 'vs/base/common/event';
 import { IEnvironmentService } from 'vs/platform/environment/common/environment';
+import { TokenStyle, TokenClassification, ProbeScope } from 'vs/platform/theme/common/tokenClassificationRegistry';
 
 export const IThemeService = createDecorator<IThemeService>('themeService');
 
@@ -48,18 +48,28 @@ export interface ITheme {
 	readonly type: ThemeType;
 
 	/**
-	 * Resolves the color of the given color identifer. If the theme does not
+	 * Resolves the color of the given color identifier. If the theme does not
 	 * specify the color, the default color is returned unless <code>useDefault</code> is set to false.
 	 * @param color the id of the color
 	 * @param useDefault specifies if the default color should be used. If not set, the default is used.
 	 */
-	getColor(color: ColorIdentifier, useDefault?: boolean): Color;
+	getColor(color: ColorIdentifier, useDefault?: boolean): Color | undefined;
 
 	/**
-	 * Returns wheter the theme defines a value for the color. If not, that means the
+	 * Returns whether the theme defines a value for the color. If not, that means the
 	 * default color will be used.
 	 */
 	defines(color: ColorIdentifier): boolean;
+
+	getTokenStyle(classification: TokenClassification, useDefault?: boolean): TokenStyle | undefined;
+
+	resolveScopes(scopes: ProbeScope[]): TokenStyle | undefined;
+}
+
+export interface IIconTheme {
+	readonly hasFileIcons: boolean;
+	readonly hasFolderIcons: boolean;
+	readonly hidesExplorerArrows: boolean;
 }
 
 export interface ICssStyleCollector {
@@ -71,14 +81,15 @@ export interface IThemingParticipant {
 }
 
 export interface IThemeService {
-	_serviceBrand: any;
+	_serviceBrand: undefined;
 
 	getTheme(): ITheme;
 
-	/**
-	 * Register a theming participant that is invoked after every theme change.
-	 */
-	onThemeChange: Event<ITheme>;
+	readonly onThemeChange: Event<ITheme>;
+
+	getIconTheme(): IIconTheme;
+
+	readonly onIconThemeChange: Event<IIconTheme>;
 
 }
 
